@@ -153,30 +153,42 @@ client.on("messageReactionRemove", async (reaction, user) => {
 });
 
 // =========================
-// KIỂM TRA DEADLINE HẾT HẠN
+// KIỂM TRA DEADLINE HẾT HẠN (TỔNG HỢP THÔNG BÁO)
 // =========================
 setInterval(async () => {
   const now = Date.now();
-  for (const dl of [...deadlines]) {
-    if (!dl.expired && now >= dl.due) {
-      dl.expired = true;
+  
+  // Lấy tất cả deadline chưa expired
+  const pendingDeadlines = deadlines.filter(dl => !dl.expired && now >= dl.due);
+  
+  for (const dl of pendingDeadlines) {
+    dl.expired = true; // đánh dấu expired
 
-      try {
-        const guild = await client.guilds.fetch(dl.guildId);
-        const missedChannel = guild.channels.cache.find(c => c.name === "🚨-missed-deadlines");
+    try {
+      const guild = await client.guilds.fetch(dl.guildId);
+      const missedChannel = guild.channels.cache.find(c => c.name === "🚨-missed-deadlines");
+      if (!missedChannel) continue;
 
-        if (missedChannel && !dl.done) {
-          missedChannel.send(
-            `⏰ Deadline đã hết hạn!\n<@${dl.userId}> chưa hoàn thành nhiệm vụ: **${dl.task || "Không có mô tả"}**`
-          );
-        }
+      // Lọc những member chưa hoàn thành cùng messageId
+      const sameMessageDeadlines = deadlines.filter(d => d.messageId === dl.messageId && !d.done);
+      if (sameMessageDeadlines.length === 0) continue;
 
-        // Nếu người đó tick rồi, xóa role reward
-        const member = await guild.members.fetch(dl.userId);
+      const userMentions = sameMessageDeadlines.map(d => `<@${d.userId}>`).join(", ");
+      const task = dl.task || "Không có mô tả";
+
+      // Gửi 1 message duy nhất cho tất cả người chưa hoàn thành
+      missedChannel.send(
+        `⏰ Deadline đã hết hạn!\nNhững người chưa hoàn thành nhiệm vụ **${task}**: ${userMentions}`
+      );
+
+      // Xóa role reward nếu người nào đã tick ✅
+      for (const d of sameMessageDeadlines) {
+        const member = await guild.members.fetch(d.userId);
         if (member.roles.cache.has(config.roleId)) await member.roles.remove(config.roleId);
-      } catch (err) {
-        console.error("Lỗi khi xử lý deadline hết hạn:", err);
       }
+
+    } catch (err) {
+      console.error("Lỗi khi xử lý deadline hết hạn:", err);
     }
   }
 }, 1000);
