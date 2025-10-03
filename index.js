@@ -63,16 +63,21 @@ client.on("messageCreate", async (msg) => {
   // 👉 Lấy danh sách tất cả member (user + role)
   let allMembers = [];
 
+  // Thêm các user được tag trực tiếp
   for (const user of msg.mentions.users.values()) {
     const member = await msg.guild.members.fetch(user.id);
     allMembers.push(member);
   }
 
+  // Thêm các member thuộc role được tag
   for (const role of msg.mentions.roles.values()) {
-    const membersInRole = await msg.guild.roles.fetch(role.id);
-    membersInRole.members.forEach(member => {
-      if (!allMembers.find(m => m.id === member.id)) {
-        allMembers.push(member);
+    // Lấy tất cả member trong guild
+    const guildMembers = await msg.guild.members.fetch();
+    guildMembers.forEach(member => {
+      if (member.roles.cache.has(role.id)) {
+        if (!allMembers.find(m => m.id === member.id)) {
+          allMembers.push(member);
+        }
       }
     });
   }
