@@ -2,7 +2,11 @@ const { Client, GatewayIntentBits, Partials } = require("discord.js");
 const config = require("./config.json");
 require("dotenv").config();
 const moment = require("moment-timezone");
+const express = require("express"); // thêm express
 
+// =========================
+// BOT DISCORD
+// =========================
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -33,7 +37,6 @@ client.on("messageCreate", async (msg) => {
   let dueTime = null;
   let task = "";
 
-  // 👉 Nếu nhập kiểu thời lượng
   if (args[2].endsWith("h") || args[2].endsWith("m")) {
     const timeArg = args[2];
     task = args.slice(3).join(" ");
@@ -43,9 +46,7 @@ client.on("messageCreate", async (msg) => {
     else if (timeArg.endsWith("m")) ms = parseInt(timeArg) * 60 * 1000;
 
     dueTime = Date.now() + ms;
-  }
-  // 👉 Nếu nhập kiểu ngày giờ
-  else {
+  } else {
     const timeStr = args[2] + " " + args[3];
     task = args.slice(4).join(" ");
 
@@ -63,7 +64,6 @@ client.on("messageCreate", async (msg) => {
     dueTime = deadlineMoment.valueOf();
   }
 
-  // 👉 Lấy tất cả member user + role
   let allMembers = [];
 
   for (const user of msg.mentions.users.values()) {
@@ -82,14 +82,12 @@ client.on("messageCreate", async (msg) => {
 
   if (!allMembers.length) return msg.reply("❌ Không tìm thấy user nào trong tag hoặc role.");
 
-  // 👉 Gửi thông báo deadline
   const mentionList = allMembers.map(m => `<@${m.id}>`).join(", ");
   const deadlineMsg = await msg.channel.send(
     `📌 Deadline cho ${mentionList}:\n**${task}**\nThời hạn: <t:${Math.floor(dueTime / 1000)}:F>\n\nMỗi người hãy nhấn ✅ khi hoàn thành!`
   );
   await deadlineMsg.react("✅");
 
-  // 👉 Lưu deadline cho từng người
   for (const member of allMembers) {
     if (member.roles.cache.has(config.roleId)) await member.roles.remove(config.roleId);
 
@@ -116,7 +114,6 @@ client.on("messageReactionAdd", async (reaction, user) => {
   const dls = deadlines.filter(d => d.messageId === reaction.message.id);
   if (!dls.length) return;
 
-  // Kiểm tra deadline đã hết hạn chưa
   if (dls[0].expired) {
     reaction.users.remove(user.id);
     return reaction.message.channel.send(`⚠️ Deadline đã hết hạn, bạn không thể tick ✅.`);
@@ -171,7 +168,6 @@ setInterval(async () => {
           );
         }
 
-        // Nếu người đó tick rồi, xóa role reward
         const member = await guild.members.fetch(dl.userId);
         if (member.roles.cache.has(config.roleId)) await member.roles.remove(config.roleId);
       } catch (err) {
@@ -181,4 +177,19 @@ setInterval(async () => {
   }
 }, 1000);
 
+// =========================
+// WEB SERVER DUMMY (giữ bot online Replit / Web Service)
+// =========================
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.get("/", (req, res) => {
+  res.send("Bot đang chạy!");
+});
+
+app.listen(PORT, () => console.log(`🌐 Web server đang chạy trên port ${PORT}`));
+
+// =========================
+// LOGIN DISCORD
+// =========================
 client.login(process.env.DISCORD_TOKEN);
