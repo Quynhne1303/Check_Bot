@@ -1,7 +1,7 @@
 const { Client, GatewayIntentBits, Partials } = require("discord.js");
 const config = require("./config.json");
 require("dotenv").config();
-const moment = require("moment-timezone"); // nhớ cài: npm install moment-timezone
+const moment = require("moment-timezone"); // npm install moment-timezone
 
 const client = new Client({
   intents: [
@@ -43,14 +43,23 @@ client.on("messageCreate", async (msg) => {
 
     dueTime = Date.now() + ms;
   }
-  // 👉 Nếu nhập kiểu ngày giờ: !deadline @user 1h11 4/10/2025 Nhiệm vụ
+  // 👉 Nếu nhập kiểu ngày giờ: !deadline @user 01:23 4/10/2025 Nhiệm vụ hoặc 1h11 4/10/2025
   else {
-    const timeStr = args[2] + " " + args[3]; // "1h11 4/10/2025"
+    const timeStr = args[2] + " " + args[3]; 
     task = args.slice(4).join(" ");
 
-    const deadlineMoment = moment.tz(timeStr, "HH[h]mm D/M/YYYY", "Asia/Ho_Chi_Minh");
-    if (!deadlineMoment.isValid()) {
-      return msg.reply("❌ Sai định dạng thời gian. Ví dụ: `30m`, `2h`, hoặc `1h11 4/10/2025`");
+    let deadlineMoment = null;
+
+    // Thử parse theo dạng "HH:mm"
+    if (timeStr.includes(":")) {
+      deadlineMoment = moment.tz(timeStr, "HH:mm D/M/YYYY", "Asia/Ho_Chi_Minh");
+    } else if (timeStr.includes("h")) {
+      // Thử parse theo dạng "Hhmm"
+      deadlineMoment = moment.tz(timeStr, "H[h]mm D/M/YYYY", "Asia/Ho_Chi_Minh");
+    }
+
+    if (!deadlineMoment || !deadlineMoment.isValid()) {
+      return msg.reply("❌ Sai định dạng thời gian. Ví dụ: `30m`, `2h`, `01:23 4/10/2025` hoặc `1h11 4/10/2025`");
     }
 
     dueTime = deadlineMoment.valueOf();
@@ -118,7 +127,6 @@ setInterval(async () => {
         console.error("Lỗi khi gỡ role:", err);
       }
 
-      // Xóa deadline khỏi danh sách
       deadlines = deadlines.filter(d => d !== dl);
     }
   }
