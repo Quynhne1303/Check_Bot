@@ -1,8 +1,7 @@
 const { Client, GatewayIntentBits, Partials } = require("discord.js");
 const config = require("./config.json");
 require("dotenv").config();
-const moment = require("moment-timezone"); // npm install moment-timezone
-
+const moment = require("moment-timezone");
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
