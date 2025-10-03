@@ -2,6 +2,7 @@ const { Client, GatewayIntentBits, Partials } = require("discord.js");
 const config = require("./config.json");
 require("dotenv").config();
 const moment = require("moment-timezone");
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -42,18 +43,15 @@ client.on("messageCreate", async (msg) => {
 
     dueTime = Date.now() + ms;
   }
-  // 👉 Nếu nhập kiểu ngày giờ: !deadline @user 01:23 4/10/2025 Nhiệm vụ hoặc 1h11 4/10/2025
+  // 👉 Nếu nhập kiểu ngày giờ
   else {
     const timeStr = args[2] + " " + args[3]; 
     task = args.slice(4).join(" ");
 
     let deadlineMoment = null;
-
-    // Thử parse theo dạng "HH:mm"
     if (timeStr.includes(":")) {
       deadlineMoment = moment.tz(timeStr, "HH:mm D/M/YYYY", "Asia/Ho_Chi_Minh");
     } else if (timeStr.includes("h")) {
-      // Thử parse theo dạng "Hhmm"
       deadlineMoment = moment.tz(timeStr, "H[h]mm D/M/YYYY", "Asia/Ho_Chi_Minh");
     }
 
@@ -82,7 +80,9 @@ client.on("messageCreate", async (msg) => {
     userId: targetUser.id,
     due: dueTime,
     done: false,
-    channelId: msg.channel.id
+    channelId: msg.channel.id,
+    guildId: msg.guild.id,
+    task: task
   });
 });
 
@@ -110,20 +110,29 @@ setInterval(async () => {
   const now = Date.now();
   for (const dl of [...deadlines]) {
     if (!dl.done && now >= dl.due) {
-      const channel = await client.channels.fetch(dl.channelId);
-      channel.send(
-        `⏰ Deadline đã hết hạn!\n<@${dl.userId}> chưa hoàn thành nhiệm vụ.`
-      );
-
-      // ✅ Gỡ role "Đã hoàn thành" nếu user vẫn còn giữ
       try {
-        const guild = channel.guild;
+        // 🔍 Lấy guild từ dl.guildId
+        const guild = await client.guilds.fetch(dl.guildId);
+        // 🔍 Tìm kênh có tên "🚨-missed-deadlines"
+        const missedChannel = guild.channels.cache.find(
+          c => c.name === "🚨-missed-deadlines"
+        );
+
+        if (missedChannel) {
+          missedChannel.send(
+            `⏰ Deadline đã hết hạn!\n<@${dl.userId}> chưa hoàn thành nhiệm vụ: **${dl.task || "Không có mô tả"}**`
+          );
+        } else {
+          console.warn(`⚠️ Không tìm thấy kênh 🚨-missed-deadlines trong server ${guild.name}`);
+        }
+
+        // ✅ Gỡ role "Đã hoàn thành" nếu user vẫn còn giữ
         const member = await guild.members.fetch(dl.userId);
         if (member.roles.cache.has(config.roleId)) {
           await member.roles.remove(config.roleId);
         }
       } catch (err) {
-        console.error("Lỗi khi gỡ role:", err);
+        console.error("Lỗi khi xử lý deadline hết hạn:", err);
       }
 
       deadlines = deadlines.filter(d => d !== dl);
