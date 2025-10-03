@@ -20,6 +20,9 @@ client.once("ready", () => {
   console.log(`✅ Bot đã đăng nhập với ${client.user.tag}`);
 });
 
+// =========================
+// TẠO DEADLINE
+// =========================
 client.on("messageCreate", async (msg) => {
   if (!msg.content.startsWith("!deadline")) return;
   if (!msg.mentions.users.size && !msg.mentions.roles.size) {
@@ -60,44 +63,35 @@ client.on("messageCreate", async (msg) => {
     dueTime = deadlineMoment.valueOf();
   }
 
-  // 👉 Lấy danh sách tất cả member (user + role)
+  // 👉 Lấy tất cả member user + role
   let allMembers = [];
 
-  // Thêm các user được tag trực tiếp
   for (const user of msg.mentions.users.values()) {
     const member = await msg.guild.members.fetch(user.id);
     allMembers.push(member);
   }
 
-  // Thêm các member thuộc role được tag
   for (const role of msg.mentions.roles.values()) {
-    // Lấy tất cả member trong guild
     const guildMembers = await msg.guild.members.fetch();
     guildMembers.forEach(member => {
-      if (member.roles.cache.has(role.id)) {
-        if (!allMembers.find(m => m.id === member.id)) {
-          allMembers.push(member);
-        }
+      if (member.roles.cache.has(role.id) && !allMembers.find(m => m.id === member.id)) {
+        allMembers.push(member);
       }
     });
   }
 
-  if (!allMembers.length) {
-    return msg.reply("❌ Không tìm thấy user nào trong tag hoặc role.");
-  }
+  if (!allMembers.length) return msg.reply("❌ Không tìm thấy user nào trong tag hoặc role.");
 
-  // 👉 Gom lại 1 thông báo chung
+  // 👉 Gửi thông báo deadline
   const mentionList = allMembers.map(m => `<@${m.id}>`).join(", ");
   const deadlineMsg = await msg.channel.send(
     `📌 Deadline cho ${mentionList}:\n**${task}**\nThời hạn: <t:${Math.floor(dueTime / 1000)}:F>\n\nMỗi người hãy nhấn ✅ khi hoàn thành!`
   );
   await deadlineMsg.react("✅");
 
-  // Lưu deadline cho từng người
+  // 👉 Lưu deadline cho từng người
   for (const member of allMembers) {
-    if (member.roles.cache.has(config.roleId)) {
-      await member.roles.remove(config.roleId);
-    }
+    if (member.roles.cache.has(config.roleId)) await member.roles.remove(config.roleId);
 
     deadlines.push({
       messageId: deadlineMsg.id,
@@ -106,57 +100,83 @@ client.on("messageCreate", async (msg) => {
       done: false,
       channelId: msg.channel.id,
       guildId: msg.guild.id,
-      task: task
+      task: task,
+      expired: false
     });
   }
 });
 
+// =========================
+// REACTION ADD
+// =========================
 client.on("messageReactionAdd", async (reaction, user) => {
   if (reaction.partial) await reaction.fetch();
+  if (user.bot) return;
 
   const dls = deadlines.filter(d => d.messageId === reaction.message.id);
   if (!dls.length) return;
 
+  // Kiểm tra deadline đã hết hạn chưa
+  if (dls[0].expired) {
+    reaction.users.remove(user.id);
+    return reaction.message.channel.send(`⚠️ Deadline đã hết hạn, bạn không thể tick ✅.`);
+  }
+
   if (reaction.emoji.name === "✅") {
     const dl = dls.find(d => d.userId === user.id);
-    if (dl) {
+    if (dl && !dl.done) {
       dl.done = true;
       const guildMember = await reaction.message.guild.members.fetch(user.id);
       await guildMember.roles.add(config.roleId);
       reaction.message.channel.send(`🎉 ${user} đã hoàn thành deadline!`);
-    } else {
-      reaction.users.remove(user.id);
-      reaction.message.channel.send(`⚠️ Bạn không nằm trong danh sách deadline này.`);
     }
   }
 });
 
-// ✅ Check deadline hết hạn
+// =========================
+// REACTION REMOVE
+// =========================
+client.on("messageReactionRemove", async (reaction, user) => {
+  if (reaction.partial) await reaction.fetch();
+  if (user.bot) return;
+
+  const dls = deadlines.filter(d => d.messageId === reaction.message.id);
+  if (!dls.length) return;
+
+  const dl = dls.find(d => d.userId === user.id);
+  if (dl && dl.done && !dl.expired) {
+    dl.done = false;
+    const guildMember = await reaction.message.guild.members.fetch(user.id);
+    if (guildMember.roles.cache.has(config.roleId)) await guildMember.roles.remove(config.roleId);
+    reaction.message.channel.send(`⚠️ ${user} đã bỏ ✅, deadline vẫn chưa hoàn thành.`);
+  }
+});
+
+// =========================
+// KIỂM TRA DEADLINE HẾT HẠN
+// =========================
 setInterval(async () => {
   const now = Date.now();
   for (const dl of [...deadlines]) {
-    if (!dl.done && now >= dl.due) {
+    if (!dl.expired && now >= dl.due) {
+      dl.expired = true;
+
       try {
         const guild = await client.guilds.fetch(dl.guildId);
-        const missedChannel = guild.channels.cache.find(
-          c => c.name === "🚨-missed-deadlines"
-        );
+        const missedChannel = guild.channels.cache.find(c => c.name === "🚨-missed-deadlines");
 
-        if (missedChannel) {
+        if (missedChannel && !dl.done) {
           missedChannel.send(
             `⏰ Deadline đã hết hạn!\n<@${dl.userId}> chưa hoàn thành nhiệm vụ: **${dl.task || "Không có mô tả"}**`
           );
         }
 
+        // Nếu người đó tick rồi, xóa role reward
         const member = await guild.members.fetch(dl.userId);
-        if (member.roles.cache.has(config.roleId)) {
-          await member.roles.remove(config.roleId);
-        }
+        if (member.roles.cache.has(config.roleId)) await member.roles.remove(config.roleId);
       } catch (err) {
         console.error("Lỗi khi xử lý deadline hết hạn:", err);
       }
-
-      deadlines = deadlines.filter(d => d !== dl);
     }
   }
 }, 1000);
