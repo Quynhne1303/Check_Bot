@@ -1,7 +1,7 @@
 const { Client, GatewayIntentBits, Partials } = require("discord.js");
-const fs = require("fs");
 const config = require("./config.json");
 require("dotenv").config();
+const moment = require("moment-timezone"); // nhớ cài: npm install moment-timezone
 
 const client = new Client({
   intents: [
@@ -27,13 +27,34 @@ client.on("messageCreate", async (msg) => {
   }
 
   const args = msg.content.split(" ");
-  const timeArg = args[2];
-  const task = args.slice(3).join(" ");
   const targetUser = msg.mentions.users.first();
 
-  let ms = 0;
-  if (timeArg.endsWith("h")) ms = parseInt(timeArg) * 60 * 60 * 1000;
-  else if (timeArg.endsWith("m")) ms = parseInt(timeArg) * 60 * 1000;
+  let dueTime = null;
+  let task = "";
+
+  // 👉 Nếu nhập kiểu thời lượng: !deadline @user 30m Nhiệm vụ
+  if (args[2].endsWith("h") || args[2].endsWith("m")) {
+    const timeArg = args[2];
+    task = args.slice(3).join(" ");
+
+    let ms = 0;
+    if (timeArg.endsWith("h")) ms = parseInt(timeArg) * 60 * 60 * 1000;
+    else if (timeArg.endsWith("m")) ms = parseInt(timeArg) * 60 * 1000;
+
+    dueTime = Date.now() + ms;
+  }
+  // 👉 Nếu nhập kiểu ngày giờ: !deadline @user 1h11 4/10/2025 Nhiệm vụ
+  else {
+    const timeStr = args[2] + " " + args[3]; // "1h11 4/10/2025"
+    task = args.slice(4).join(" ");
+
+    const deadlineMoment = moment.tz(timeStr, "HH[h]mm D/M/YYYY", "Asia/Ho_Chi_Minh");
+    if (!deadlineMoment.isValid()) {
+      return msg.reply("❌ Sai định dạng thời gian. Ví dụ: `30m`, `2h`, hoặc `1h11 4/10/2025`");
+    }
+
+    dueTime = deadlineMoment.valueOf();
+  }
 
   const guildMember = await msg.guild.members.fetch(targetUser.id);
 
@@ -43,7 +64,7 @@ client.on("messageCreate", async (msg) => {
   }
 
   const deadlineMsg = await msg.channel.send(
-    `📌 Deadline cho ${targetUser}:\n**${task}**\nThời hạn: ${timeArg}\n\nNhấn ✅ nếu hoàn thành!`
+    `📌 Deadline cho ${targetUser}:\n**${task}**\nThời hạn: <t:${Math.floor(dueTime / 1000)}:F>\n\nNhấn ✅ nếu hoàn thành!`
   );
 
   await deadlineMsg.react("✅");
@@ -51,7 +72,7 @@ client.on("messageCreate", async (msg) => {
   deadlines.push({
     messageId: deadlineMsg.id,
     userId: targetUser.id,
-    due: Date.now() + ms,
+    due: dueTime,
     done: false,
     channelId: msg.channel.id
   });
@@ -76,7 +97,7 @@ client.on("messageReactionAdd", async (reaction, user) => {
   }
 });
 
-// ✅ Cách 2: kiểm tra mỗi giây để chính xác đến phút/giây
+// ✅ Kiểm tra deadline mỗi giây
 setInterval(async () => {
   const now = Date.now();
   for (const dl of [...deadlines]) {
