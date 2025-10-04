@@ -181,13 +181,13 @@ setInterval(async () => {
 // WEB SERVER DUMMY (giữ bot online Replit / Web Service)
 // =========================
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 5000;
 
 app.get("/", (req, res) => {
   res.send("Bot đang chạy!");
 });
 
-app.listen(PORT, () => console.log(`🌐 Web server đang chạy trên port ${PORT}`));
+app.listen(PORT, "0.0.0.0", () => console.log(`🌐 Web server đang chạy trên port ${PORT}`));
 
 // =========================
 // LOGIN DISCORD
